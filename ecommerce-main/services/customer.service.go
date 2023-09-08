@@ -139,25 +139,39 @@ func (p *CustomerService) CreateTokens(user *models.Token) (*ecommerce.Empty, er
 func (p *CustomerService) UpdateCustomer(user *models.UpdateRequest) (*models.CustomerDBResponse, error) {
 	var updatedUser models.CustomerDBResponse
 	if user.Field == "country" || user.Field == "street1" || user.Field == "street2" || user.Field == "city" || user.Field == "state" || user.Field == "zip" {
+
 		filter := bson.D{
 			{Key: "customerid", Value: user.CustomerId},
-			{Key: "address." + user.Field, Value: user.OldValue}, // Match the original 'address.country' value
+			{Key: "address." + user.Field, Value: user.OldValue},
 		}
-
-		// Create an update operation to set the specific 'address.country' field to the new value
 		update := bson.D{
 			{Key: "$set", Value: bson.D{
 				{Key: "address.$." + user.Field, Value: user.NewValue},
 			}},
 		}
-
 		options := options.Update()
 
-		_, err := p.ProfileCollection.UpdateOne(p.ctx, filter, update, options)
+		result, err := p.ProfileCollection.UpdateOne(p.ctx, filter, update, options)
 		if err != nil {
-			fmt.Printf("MongoDB error: %v\n", err)
+			fmt.Println("error while updating")
 			return nil, err
 		}
+
+		if result.MatchedCount == 0 {
+			// No documents matched the filter criteria, so return an error
+			return nil, mongo.ErrNoDocuments
+		}
+
+		filter3 := bson.D{{Key: "customerid", Value: user.CustomerId}}
+		// Fetch the updated user document
+
+		err2 := p.ProfileCollection.FindOne(p.ctx, filter3).Decode(&updatedUser)
+		if err2 != nil {
+			fmt.Println("Error decoding document:", err2)
+			return nil, err2
+		}
+		return &updatedUser, nil
+
 	} else {
 		filter2 := bson.D{
 			{Key: "customerid", Value: user.CustomerId},
