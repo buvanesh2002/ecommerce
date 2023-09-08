@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/kishorens18/ecommerce/config"
 	"github.com/kishorens18/ecommerce/constants"
+	"github.com/kishorens18/ecommerce/controllers"
 	"github.com/kishorens18/ecommerce/models"
 	pb "github.com/kishorens18/ecommerce/proto"
 	"github.com/kishorens18/ecommerce/services"
@@ -79,41 +80,65 @@ func main() {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Token creation failed"})
 				return
 			}
-			response1, err := client.CreateTokens(c.Request.Context(), &pb.Token{Email: user.Email, Token: token, Customerid: user.CustomerId})
-			fmt.Println(response1)
+			client.CreateTokens(c.Request.Context(), &pb.Token{Email: user.Email, Token: token, Customerid: user.CustomerId})
+
 			c.JSON(http.StatusOK, gin.H{"token": token})
 		} else {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		}
 	})
 
+	r.POST("/deletecustomer", func(c *gin.Context) {
+		var user models.DeleteRequest
+		token := c.GetHeader("Authorization")
+		customerID, err := controllers.ExtractCustomerID(token, constants.SecretKey)
+		user.CustomerId = customerID
+		fmt.Println(user.CustomerId)
+		if err != nil {
+			fmt.Println("error from token extraction")
+			c.JSON(http.StatusBadRequest, gin.H{"message": "User not deleted"})
+			panic(err)
+		}
+
+		if err := c.ShouldBindJSON(&user); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			fmt.Println("error while blinding")
+			return
+		}
+		_, err2 := client.DeleteCustomer(c.Request.Context(), &pb.DeleteDetails{CustomerID: user.CustomerId})
+		if err2 != nil {
+			fmt.Println("error from controller")
+			c.JSON(http.StatusBadGateway, gin.H{"status": "fail", "message": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"message": "User not deleted"})
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "User deleted"})
+
+	})
 	r.POST("/updatecustomer", func(c *gin.Context) {
 		var user models.UpdateRequest
 		if err := c.ShouldBindJSON(&user); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		token := c.GetHeader("Authorization")
+		customerID, err := controllers.ExtractCustomerID(token, constants.SecretKey)
+		user.CustomerId = customerID
+
+		if err != nil {
+			fmt.Println("err in extracting token")
+			log.Fatal(err)
+		}
 		updatedUser, err := client.UpdateCustomer(c.Request.Context(), &pb.UpdateDetails{CustomerId: user.CustomerId,
 			Field: user.Field, OldValue: user.OldValue, NewValue: user.NewValue})
 
 		if err != nil {
+			fmt.Println("err from customer response :", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
 			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{"message": "User updated", "data": updatedUser})
-
-	})
-	r.POST("/deletecustomer", func(c *gin.Context) {
-		var user models.DeleteRequest
-
-		if err := c.ShouldBindJSON(&user); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		client.DeleteCustomer(c.Request.Context(), &pb.DeleteDetails{CustomerID: user.CustomerId})
-
-		c.JSON(http.StatusOK, gin.H{"message": "User deleted"})
 
 	})
 
@@ -156,7 +181,6 @@ func isValidUser(user User) bool {
 	if err != nil {
 		return false
 	}
-	fmt.Println(customer.Password)
 
 	if customer.Email == user.Email {
 
